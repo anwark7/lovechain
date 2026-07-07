@@ -25,6 +25,7 @@ the term ends.
 |---|---|
 | 📘 [`docs/PROJECT_GUIDE.md`](docs/PROJECT_GUIDE.md) | **Start here.** One self-contained onboarding doc — explains the whole system, the lifecycle, the repo map, how to run it, a full function reference, gotchas, and a paste-into-AI summary. Written so a teammate *or* an AI assistant can pick up the project cold. |
 | 📄 [`docs/LoveChain_PRD_v2.md`](docs/LoveChain_PRD_v2.md) | The original **Product Requirements Document** — the product spec this MVP was built from (flows, states, fee tiers, known limitations). |
+| 🤝 [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to contribute: setup, branch/PR workflow, the checks to run before pushing, and commit style. |
 | 📖 This `README.md` | Quickstart: setup, test, deploy, and a demo script for the three flows. |
 
 ---
