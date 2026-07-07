@@ -697,4 +697,50 @@ contract LoveChain is ReentrancyGuard, Ownable {
         c.outcome = valid ? Outcome.BREACH_VALID : Outcome.BREACH_REJECTED;
         emit BreachResolved(c.id, valid);
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // Timeouts / safety nets (PRD §30, §31) — funds must NEVER be stuck
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Resolve a stalled dispute once the voting window has elapsed:
+     *         - never challenged  -> claim auto-VALID  (accused stayed silent)
+     *         - challenged but <4/5 approvals -> claim auto-REJECTED
+     *         PRD §7.4 step 6 & §30. Callable by anyone.
+     */
+    function resolveBreachByTimeout(uint256 contractId) external {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.DISPUTED) revert WrongStatus();
+        BreachClaim storage claim = _claims[contractId];
+        if (block.timestamp < claim.votingEndsAt) revert WindowStillOpen();
+
+        // Unchallenged -> valid. Challenged -> valid only if threshold met.
+        bool valid = !claim.challenged || claim.approveVotes >= BREACH_THRESHOLD;
+        _resolveBreach(c, claim, valid);
+    }
+
+    /**
+     * @notice Unilateral safety net: after the relationship term elapses with no
+     *         outcome, either partner forces Expiry. Deposits are returned to
+     *         their owners (via {claimPayout}) minus the expiry fee. Requires
+     *         neither the other partner nor any witness. PRD §31.
+     * @dev    Allowed from any non-terminal, non-dispute mid-flow state once the
+     *         duration has passed, so a partner can always exit a stuck contract.
+     */
+    function claimByTimeout(uint256 contractId) external {
+        LoveContract storage c = _get(contractId);
+        _onlyPartner(c);
+
+        ContractStatus s = c.status;
+        bool timeoutable = s == ContractStatus.ACTIVE ||
+            s == ContractStatus.WEDDING_REQUESTED ||
+            s == ContractStatus.BREAKUP_REQUESTED ||
+            s == ContractStatus.COOLING_PERIOD;
+        if (!timeoutable) revert WrongStatus();
+        if (block.timestamp < c.activatedAt + c.duration) revert NotYetExpired();
+
+        c.status = ContractStatus.EXPIRED;
+        c.outcome = Outcome.EXPIRED;
+        emit ContractExpired(contractId);
+    }
 }
