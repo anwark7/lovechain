@@ -225,8 +225,8 @@ contract LoveChain is ReentrancyGuard, Ownable {
     error MissingEvidence();
     error BondRequired();
     error NotYetExpired();
-    error WindowNotElapsed();
     error WindowStillOpen();
+    error WindowClosed();
     error AlreadyClaimed();
     error NothingToWithdraw();
     error NotBothConfirmed();
@@ -409,5 +409,116 @@ contract LoveChain is ReentrancyGuard, Ownable {
     function _credit(address to, uint256 amount) internal {
         if (amount == 0) return;
         pendingWithdrawals[to] += amount;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Wedding Unlock (PRD §7.2, §10.5, §30) — 3/5 witnesses + mutual confirm
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Either partner requests a Wedding Unlock, attaching an off-chain
+     *         proof URI/hash. Opens the wedding approval window and pre-confirms
+     *         the requester. PRD §7.2.
+     */
+    function requestWeddingUnlock(uint256 contractId, string calldata proofURI) external {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.ACTIVE) revert WrongStatus();
+        _onlyPartner(c);
+        if (bytes(proofURI).length == 0) revert MissingProof();
+
+        c.status = ContractStatus.WEDDING_REQUESTED;
+        c.weddingRequestedAt = block.timestamp;
+        // Requester implicitly confirms; the other partner must still confirm.
+        c.partnerAConfirmedWedding = (msg.sender == c.partnerA);
+        c.partnerBConfirmedWedding = (msg.sender == c.partnerB);
+
+        emit WeddingRequested(contractId, msg.sender, proofURI);
+    }
+
+    /**
+     * @notice The other partner confirms the pending Wedding Unlock. If both
+     *         partners have confirmed AND the witness threshold is met, the
+     *         wedding finalizes immediately.
+     */
+    function confirmWedding(uint256 contractId) external {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.WEDDING_REQUESTED) revert WrongStatus();
+        _onlyPartner(c);
+        _requireWeddingWindowOpen(c);
+
+        if (msg.sender == c.partnerA) {
+            c.partnerAConfirmedWedding = true;
+        } else {
+            c.partnerBConfirmedWedding = true;
+        }
+        emit WeddingConfirmed(contractId, msg.sender);
+
+        _tryFinalizeWedding(c);
+    }
+
+    /**
+     * @notice A registered witness approves the Wedding Unlock. When 3/5 approve
+     *         and both partners have confirmed, the wedding finalizes.
+     * @dev    Wedding votes are approve-only; there is no "reject wedding" vote.
+     */
+    function voteWedding(uint256 contractId) external {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.WEDDING_REQUESTED) revert WrongStatus();
+        if (!_isWitness[contractId][msg.sender]) revert NotWitness();
+        _requireWeddingWindowOpen(c);
+        if (_hasVoted[contractId][msg.sender]) revert AlreadyVoted();
+
+        _hasVoted[contractId][msg.sender] = true;
+        // Reuse the claim struct's approveVotes as the wedding tally to avoid
+        // extra storage; a wedding never coexists with a breach claim.
+        BreachClaim storage tally = _claims[contractId];
+        tally.approveVotes += 1;
+
+        emit WeddingVoteCast(contractId, msg.sender, tally.approveVotes);
+        _tryFinalizeWedding(c);
+    }
+
+    /**
+     * @notice If the wedding approval window elapses without finalizing, anyone
+     *         may revert the contract to ACTIVE, clearing wedding state. PRD §30.
+     */
+    function expireWeddingRequest(uint256 contractId) external {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.WEDDING_REQUESTED) revert WrongStatus();
+        if (block.timestamp < c.weddingRequestedAt + weddingWindow) revert WindowStillOpen();
+
+        _resetWeddingState(contractId, c);
+        c.status = ContractStatus.ACTIVE;
+        emit WeddingRequestExpired(contractId);
+    }
+
+    /// @dev Finalize the wedding iff both partners confirmed and 3/5 witnesses approved.
+    function _tryFinalizeWedding(LoveContract storage c) internal {
+        if (!c.partnerAConfirmedWedding || !c.partnerBConfirmedWedding) return;
+        if (_claims[c.id].approveVotes < WEDDING_THRESHOLD) return;
+
+        c.status = ContractStatus.MARRIAGE_CONFIRMED;
+        c.outcome = Outcome.WEDDING;
+
+        emit WeddingUnlocked(c.id, _claims[c.id].approveVotes);
+        // Badge is an event in the MVP (a real NFT is an isolated bonus).
+        emit WeddingBadge(c.id, c.partnerA, c.partnerB);
+    }
+
+    /// @dev Revert if the wedding approval window has already closed.
+    function _requireWeddingWindowOpen(LoveContract storage c) internal view {
+        if (block.timestamp >= c.weddingRequestedAt + weddingWindow) revert WindowClosed();
+    }
+
+    /// @dev Clear all wedding-related transient state when reverting to ACTIVE.
+    function _resetWeddingState(uint256 contractId, LoveContract storage c) internal {
+        c.partnerAConfirmedWedding = false;
+        c.partnerBConfirmedWedding = false;
+        c.weddingRequestedAt = 0;
+        delete _claims[contractId]; // clears the wedding vote tally
+        address[] storage ws = _witnesses[contractId];
+        for (uint256 i = 0; i < ws.length; i++) {
+            _hasVoted[contractId][ws[i]] = false;
+        }
     }
 }
