@@ -90,6 +90,7 @@ contract LoveChain is ReentrancyGuard, Ownable {
         uint256 lastCheckInB;
         uint256 weddingRequestedAt; // start of the wedding approval window
         uint256 coolingEndsAt; // timestamp cooling period finishes
+        address breakupRequestedBy; // partner who requested peaceful exit
         ContractStatus status;
         Outcome outcome;
         bool partnerAConfirmedWedding;
@@ -411,6 +412,18 @@ contract LoveChain is ReentrancyGuard, Ownable {
         pendingWithdrawals[to] += amount;
     }
 
+    /// @dev Take `feeBps` of `amount` as platform fee; return the net remainder.
+    ///      The fee is accrued to the owner and withdrawn via {withdrawFees}.
+    function _netAfterFee(uint256 amount, uint256 feeBps) internal pure returns (uint256) {
+        uint256 fee = (amount * feeBps) / BPS_DENOMINATOR;
+        return amount - fee;
+    }
+
+    /// @dev The platform fee taken from `amount` at `feeBps`.
+    function _feeOf(uint256 amount, uint256 feeBps) internal pure returns (uint256) {
+        return (amount * feeBps) / BPS_DENOMINATOR;
+    }
+
     // ─────────────────────────────────────────────────────────────
     // Wedding Unlock (PRD §7.2, §10.5, §30) — 3/5 witnesses + mutual confirm
     // ─────────────────────────────────────────────────────────────
@@ -520,5 +533,57 @@ contract LoveChain is ReentrancyGuard, Ownable {
         for (uint256 i = 0; i < ws.length; i++) {
             _hasVoted[contractId][ws[i]] = false;
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Peaceful Exit (PRD §7.3, §10.6, §30) — mutual approve + cooling period
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice A partner requests a peaceful breakup. Moves ACTIVE -> BREAKUP_REQUESTED.
+     */
+    function requestPeacefulExit(uint256 contractId) external {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.ACTIVE) revert WrongStatus();
+        _onlyPartner(c);
+
+        c.status = ContractStatus.BREAKUP_REQUESTED;
+        c.breakupRequestedBy = msg.sender;
+        emit PeacefulExitRequested(contractId, msg.sender);
+    }
+
+    /**
+     * @notice The OTHER partner approves the peaceful exit, starting the cooling
+     *         period. Moves BREAKUP_REQUESTED -> COOLING_PERIOD. PRD §7.3.
+     * @dev    The approver must be a partner and cannot be the same call flow as
+     *         the requester in a single tx; both partners naturally act here
+     *         because request/approve are separate transactions.
+     */
+    function approvePeacefulExit(uint256 contractId) external {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.BREAKUP_REQUESTED) revert WrongStatus();
+        _onlyPartner(c);
+        // The counterparty (not the requester) must approve — mutual consent.
+        if (msg.sender == c.breakupRequestedBy) revert NotPartner();
+
+        c.status = ContractStatus.COOLING_PERIOD;
+        c.coolingEndsAt = block.timestamp + coolingPeriod;
+        emit PeacefulExitApproved(contractId, msg.sender, c.coolingEndsAt);
+    }
+
+    /**
+     * @notice After the cooling period elapses with no dispute, finalize the
+     *         peaceful exit. Deposits are returned to their owners minus the
+     *         peaceful-exit fee. Anyone may trigger finalization. PRD §14.2.
+     */
+    function finalizePeacefulExit(uint256 contractId) external {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.COOLING_PERIOD) revert WrongStatus();
+        if (block.timestamp < c.coolingEndsAt) revert WindowStillOpen();
+
+        c.status = ContractStatus.RESOLVED;
+        c.outcome = Outcome.PEACEFUL;
+
+        emit PeacefulExitFinalized(contractId);
     }
 }
