@@ -19,11 +19,13 @@ The guiding principle: **funds are never permanently stuck.** Every threshold ha
 a time-based fallback, and a lone partner can always recover their deposit once
 the term ends.
 
-Built for the Web3 Bootcamp per [`docs/LoveChain_PRD_v2.md`](docs/LoveChain_PRD_v2.md).
+## 📚 Documentation
 
-> 📘 **New to the project (or handing it to an AI)?** Read
-> [`docs/PROJECT_GUIDE.md`](docs/PROJECT_GUIDE.md) — one self-contained document
-> that explains the whole system and how to run it.
+| Document | What it's for |
+|---|---|
+| 📘 [`docs/PROJECT_GUIDE.md`](docs/PROJECT_GUIDE.md) | **Start here.** One self-contained onboarding doc — explains the whole system, the lifecycle, the repo map, how to run it, a full function reference, gotchas, and a paste-into-AI summary. Written so a teammate *or* an AI assistant can pick up the project cold. |
+| 📄 [`docs/LoveChain_PRD_v2.md`](docs/LoveChain_PRD_v2.md) | The original **Product Requirements Document** — the product spec this MVP was built from (flows, states, fee tiers, known limitations). |
+| 📖 This `README.md` | Quickstart: setup, test, deploy, and a demo script for the three flows. |
 
 ---
 
@@ -46,7 +48,9 @@ lovechain/
 │        ├─ lib/                 # wagmi config, contract ABI+address, formatters
 │        ├─ types/               # Deal, BreachClaim
 │        └─ constants/           # status/outcome/fee enums, chains
-└─ docs/                         # Product Requirements Document
+└─ docs/
+   ├─ PROJECT_GUIDE.md           # onboarding guide (teammates & AI)
+   └─ LoveChain_PRD_v2.md        # product requirements document
 ```
 
 ## Tech stack
