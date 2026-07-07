@@ -743,4 +743,165 @@ contract LoveChain is ReentrancyGuard, Ownable {
         c.outcome = Outcome.EXPIRED;
         emit ContractExpired(contractId);
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // Payout, withdrawal, and fees (PRD §14, §18, §28) — pull-payment
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Claim the caller's share of a resolved/expired contract. Computes
+     *         the caller's entitlement from the final {Outcome}, accrues the
+     *         platform fee, and credits the pull-payment ledger. Each partner
+     *         may claim at most once per contract (PRD §10.9).
+     * @dev    Follows the pull-payment pattern: this only credits the ledger;
+     *         ETH leaves via {withdraw}. Reverting states cannot reach here.
+     */
+    function claimPayout(uint256 contractId) external nonReentrant {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.RESOLVED && c.status != ContractStatus.EXPIRED) {
+            revert WrongStatus();
+        }
+        _onlyPartner(c);
+
+        bool isA = msg.sender == c.partnerA;
+        if (isA) {
+            if (c.partnerAClaimed) revert AlreadyClaimed();
+            c.partnerAClaimed = true;
+        } else {
+            if (c.partnerBClaimed) revert AlreadyClaimed();
+            c.partnerBClaimed = true;
+        }
+
+        uint256 amount = _entitlement(c, msg.sender);
+        _credit(msg.sender, amount);
+
+        emit Payout(contractId, msg.sender, amount);
+    }
+
+    /**
+     * @notice Withdraw the caller's accumulated pull-payment balance across all
+     *         contracts. Reentrancy-guarded; zeroes the balance before transfer.
+     */
+    function withdraw() external nonReentrant {
+        uint256 amount = pendingWithdrawals[msg.sender];
+        if (amount == 0) revert NothingToWithdraw();
+        pendingWithdrawals[msg.sender] = 0;
+
+        (bool ok, ) = payable(msg.sender).call{value: amount}("");
+        require(ok, "withdraw failed");
+        emit Withdrawal(msg.sender, amount);
+    }
+
+    /**
+     * @notice Owner withdraws all accrued platform fees.
+     */
+    function withdrawFees(address to) external onlyOwner nonReentrant {
+        uint256 amount = accruedFees;
+        if (amount == 0) revert NothingToWithdraw();
+        accruedFees = 0;
+
+        (bool ok, ) = payable(to).call{value: amount}("");
+        require(ok, "fee withdraw failed");
+        emit FeesWithdrawn(to, amount);
+    }
+
+    /**
+     * @dev Compute `who`'s total entitlement for a resolved/expired contract,
+     *      net of the appropriate platform fee. Pure function of stored state;
+     *      double-claim protection lives in {claimPayout}.
+     */
+    function _entitlement(LoveContract storage c, address who) internal view returns (uint256) {
+        bool isA = who == c.partnerA;
+        uint256 own = isA ? c.depositA : c.depositB;
+        uint256 other = isA ? c.depositB : c.depositA;
+
+        if (c.outcome == Outcome.WEDDING) {
+            return _netAfterFee(own, WEDDING_FEE_BPS);
+        }
+        if (c.outcome == Outcome.PEACEFUL) {
+            return _netAfterFee(own, PEACEFUL_FEE_BPS);
+        }
+        if (c.outcome == Outcome.EXPIRED) {
+            return _netAfterFee(own, EXPIRED_FEE_BPS);
+        }
+
+        BreachClaim storage claim = _claims[c.id];
+
+        if (c.outcome == Outcome.BREACH_VALID) {
+            uint256 award = (other * breachAwardBps) / BPS_DENOMINATOR;
+            if (who == claim.claimant) {
+                // Own deposit + awarded share of accused deposit + bond back,
+                // all net of the 1% breach fee.
+                uint256 gross = own + award + claim.bondAmount;
+                return _netAfterFee(gross, BREACH_FEE_BPS);
+            } else {
+                // Accused keeps the un-awarded remainder of their own deposit.
+                uint256 remainder = other - award;
+                return _netAfterFee(remainder, BREACH_FEE_BPS);
+            }
+        }
+
+        if (c.outcome == Outcome.BREACH_REJECTED) {
+            // False claim: deposits returned to owners (neutral fee); the bond
+            // is compensation to the falsely-accused (no fee on compensation).
+            if (who == claim.accused) {
+                return _netAfterFee(own, PEACEFUL_FEE_BPS) + claim.bondAmount;
+            } else {
+                return _netAfterFee(own, PEACEFUL_FEE_BPS);
+            }
+        }
+
+        return 0; // Outcome.NONE — nothing claimable.
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Views (PRD §16.3-16.5) — getters for deal, witnesses, rules, claim
+    // ─────────────────────────────────────────────────────────────
+
+    /// @notice Full love-contract record.
+    function getContract(uint256 contractId) external view returns (LoveContract memory) {
+        return _get(contractId);
+    }
+
+    /// @notice The (up to five) witness addresses for a contract.
+    function getWitnesses(uint256 contractId) external view returns (address[] memory) {
+        _get(contractId);
+        return _witnesses[contractId];
+    }
+
+    /// @notice The free-text relationship rules for a contract.
+    function getRules(uint256 contractId) external view returns (string[] memory) {
+        _get(contractId);
+        return _rules[contractId];
+    }
+
+    /// @notice The current breach claim for a contract (fields zeroed if none).
+    function getClaim(uint256 contractId) external view returns (BreachClaim memory) {
+        _get(contractId);
+        return _claims[contractId];
+    }
+
+    /// @notice Whether `account` is a registered witness on a contract.
+    function isWitness(uint256 contractId, address account) external view returns (bool) {
+        return _isWitness[contractId][account];
+    }
+
+    /// @notice Whether `witness` has already voted on a contract's open matter.
+    function hasVoted(uint256 contractId, address witness) external view returns (bool) {
+        return _hasVoted[contractId][witness];
+    }
+
+    /**
+     * @notice How much `who` could claim right now for a resolved/expired
+     *         contract (0 if not yet claimable or already claimed). Convenience
+     *         for the frontend's claim page (PRD §16.5).
+     */
+    function claimableAmount(uint256 contractId, address who) external view returns (uint256) {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.RESOLVED && c.status != ContractStatus.EXPIRED) return 0;
+        if (who != c.partnerA && who != c.partnerB) return 0;
+        if (who == c.partnerA && c.partnerAClaimed) return 0;
+        if (who == c.partnerB && c.partnerBClaimed) return 0;
+        return _entitlement(c, who);
+    }
 }
