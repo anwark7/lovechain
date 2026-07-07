@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment / secrets — never commit real keys
+.env
+.env.local
+.env.*.local
+*.env
+
+# Hardhat
+packages/contracts/artifacts/
+packages/contracts/cache/
+packages/contracts/coverage/
+packages/contracts/coverage.json
+packages/contracts/typechain-types/
+packages/contracts/deployments/
+
+# Next.js
+packages/web/.next/
+packages/web/out/
+packages/web/next-env.d.ts
+
+# Build output
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Misc
+*.tsbuildinfo

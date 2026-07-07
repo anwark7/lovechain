@@ -1,0 +1,18 @@
+{
+  "name": "lovechain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LoveChain — a relationship commitment escrow dApp (testnet learning project).",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "contracts:build": "pnpm --filter @lovechain/contracts build",
+    "contracts:test": "pnpm --filter @lovechain/contracts test",
+    "contracts:deploy": "pnpm --filter @lovechain/contracts deploy",
+    "web:dev": "pnpm --filter @lovechain/web dev",
+    "web:build": "pnpm --filter @lovechain/web build",
+    "sync-abi": "pnpm --filter @lovechain/contracts sync-abi"
+  }
+}
