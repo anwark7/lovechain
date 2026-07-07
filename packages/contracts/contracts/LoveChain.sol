@@ -586,4 +586,115 @@ contract LoveChain is ReentrancyGuard, Ownable {
 
         emit PeacefulExitFinalized(contractId);
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // Breach Resolution (PRD §7.4, §10.7-10.8, §30) — bond + 4/5 voting
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice A partner raises a breach claim against the other, posting a
+     *         challenge bond (msg.value) and an off-chain evidence URI/hash.
+     *         Moves ACTIVE -> DISPUTED and opens the challenge/voting window.
+     * @dev    Only the *hash/URI* of evidence is stored on-chain (PRD §18).
+     */
+    function raiseBreachClaim(uint256 contractId, string calldata evidenceURI) external payable {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.ACTIVE) revert WrongStatus();
+        _onlyPartner(c);
+        if (bytes(evidenceURI).length == 0) revert MissingEvidence();
+        if (msg.value == 0) revert BondRequired();
+
+        address accused = (msg.sender == c.partnerA) ? c.partnerB : c.partnerA;
+
+        BreachClaim storage claim = _claims[contractId];
+        claim.claimant = msg.sender;
+        claim.accused = accused;
+        claim.evidenceURI = evidenceURI;
+        claim.bondAmount = msg.value;
+        claim.createdAt = block.timestamp;
+        claim.votingEndsAt = block.timestamp + challengePeriod;
+        claim.approveVotes = 0;
+        claim.rejectVotes = 0;
+        claim.challenged = false;
+        claim.resolved = false;
+        claim.exists = true;
+
+        c.status = ContractStatus.DISPUTED;
+
+        emit BreachClaimRaised(contractId, msg.sender, accused, msg.value, evidenceURI);
+    }
+
+    /**
+     * @notice The accused partner challenges the claim, moving it to witness
+     *         voting. Without a challenge, the claim auto-validates after the
+     *         window (see {resolveBreachByTimeout}). PRD §7.4 steps 5-7.
+     */
+    function challengeBreachClaim(uint256 contractId) external {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.DISPUTED) revert WrongStatus();
+        BreachClaim storage claim = _claims[contractId];
+        if (msg.sender != claim.accused) revert NotPartner();
+        if (block.timestamp >= claim.votingEndsAt) revert WindowClosed();
+
+        claim.challenged = true;
+        emit BreachChallenged(contractId, msg.sender);
+    }
+
+    /**
+     * @notice A registered witness votes to approve or reject the breach claim.
+     *         Reaching {BREACH_THRESHOLD} approvals validates the claim; reaching
+     *         enough rejections that approval is impossible rejects it early.
+     * @param approveClaim true = APPROVE_CLAIM, false = REJECT_CLAIM.
+     */
+    function voteDispute(uint256 contractId, bool approveClaim) external {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.DISPUTED) revert WrongStatus();
+        if (!_isWitness[contractId][msg.sender]) revert NotWitness();
+
+        BreachClaim storage claim = _claims[contractId];
+        if (block.timestamp >= claim.votingEndsAt) revert WindowClosed();
+        if (_hasVoted[contractId][msg.sender]) revert AlreadyVoted();
+
+        _hasVoted[contractId][msg.sender] = true;
+        if (approveClaim) {
+            claim.approveVotes += 1;
+        } else {
+            claim.rejectVotes += 1;
+        }
+
+        emit DisputeVoteCast(contractId, msg.sender, approveClaim, claim.approveVotes, claim.rejectVotes);
+
+        // Early resolution once a threshold is mathematically decided.
+        if (claim.approveVotes >= BREACH_THRESHOLD) {
+            _resolveBreach(c, claim, true);
+        } else if (claim.rejectVotes > WITNESS_COUNT - BREACH_THRESHOLD) {
+            // Approval can no longer reach 4/5 -> claim fails.
+            _resolveBreach(c, claim, false);
+        }
+    }
+
+    /**
+     * @notice Explicitly resolve a fully-voted dispute (e.g. exactly 4 approvals
+     *         were reached via the early path already; this is a convenience/
+     *         fallback that resolves based on the current tally once the voting
+     *         window has closed). PRD §12 `resolveDispute`.
+     */
+    function resolveDispute(uint256 contractId) external {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.DISPUTED) revert WrongStatus();
+        BreachClaim storage claim = _claims[contractId];
+        if (block.timestamp < claim.votingEndsAt) revert WindowStillOpen();
+
+        bool valid = claim.approveVotes >= BREACH_THRESHOLD;
+        _resolveBreach(c, claim, valid);
+    }
+
+    /// @dev Finalize a breach claim as valid/invalid, setting status + outcome.
+    ///      Payout math (deposit split, bond routing, fee) runs in {claimPayout}.
+    function _resolveBreach(LoveContract storage c, BreachClaim storage claim, bool valid) internal {
+        claim.resolved = true;
+        c.status = ContractStatus.RESOLVED;
+        c.outcome = valid ? Outcome.BREACH_VALID : Outcome.BREACH_REJECTED;
+        emit BreachResolved(c.id, valid);
+    }
 }
