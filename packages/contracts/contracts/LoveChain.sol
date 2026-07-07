@@ -424,6 +424,14 @@ contract LoveChain is ReentrancyGuard, Ownable {
         return (amount * feeBps) / BPS_DENOMINATOR;
     }
 
+    /// @dev Terminal, funds-claimable states: wedding, any resolution, or expiry.
+    function _isClaimable(ContractStatus s) internal pure returns (bool) {
+        return
+            s == ContractStatus.MARRIAGE_CONFIRMED ||
+            s == ContractStatus.RESOLVED ||
+            s == ContractStatus.EXPIRED;
+    }
+
     // ─────────────────────────────────────────────────────────────
     // Wedding Unlock (PRD §7.2, §10.5, §30) — 3/5 witnesses + mutual confirm
     // ─────────────────────────────────────────────────────────────
@@ -758,9 +766,7 @@ contract LoveChain is ReentrancyGuard, Ownable {
      */
     function claimPayout(uint256 contractId) external nonReentrant {
         LoveContract storage c = _get(contractId);
-        if (c.status != ContractStatus.RESOLVED && c.status != ContractStatus.EXPIRED) {
-            revert WrongStatus();
-        }
+        if (!_isClaimable(c.status)) revert WrongStatus();
         _onlyPartner(c);
 
         bool isA = msg.sender == c.partnerA;
@@ -772,7 +778,8 @@ contract LoveChain is ReentrancyGuard, Ownable {
             c.partnerBClaimed = true;
         }
 
-        uint256 amount = _entitlement(c, msg.sender);
+        (uint256 amount, uint256 fee) = _entitlement(c, msg.sender);
+        accruedFees += fee;
         _credit(msg.sender, amount);
 
         emit Payout(contractId, msg.sender, amount);
@@ -806,23 +813,29 @@ contract LoveChain is ReentrancyGuard, Ownable {
     }
 
     /**
-     * @dev Compute `who`'s total entitlement for a resolved/expired contract,
-     *      net of the appropriate platform fee. Pure function of stored state;
-     *      double-claim protection lives in {claimPayout}.
+     * @dev Compute `who`'s entitlement (net, after fee) AND the platform fee
+     *      taken from their share, for a resolved/expired contract. Pure function
+     *      of stored state; double-claim protection lives in {claimPayout}.
+     * @return net Amount credited to `who`.
+     * @return fee Platform fee accrued from `who`'s share.
      */
-    function _entitlement(LoveContract storage c, address who) internal view returns (uint256) {
+    function _entitlement(LoveContract storage c, address who)
+        internal
+        view
+        returns (uint256 net, uint256 fee)
+    {
         bool isA = who == c.partnerA;
         uint256 own = isA ? c.depositA : c.depositB;
         uint256 other = isA ? c.depositB : c.depositA;
 
         if (c.outcome == Outcome.WEDDING) {
-            return _netAfterFee(own, WEDDING_FEE_BPS);
+            return (_netAfterFee(own, WEDDING_FEE_BPS), _feeOf(own, WEDDING_FEE_BPS));
         }
         if (c.outcome == Outcome.PEACEFUL) {
-            return _netAfterFee(own, PEACEFUL_FEE_BPS);
+            return (_netAfterFee(own, PEACEFUL_FEE_BPS), _feeOf(own, PEACEFUL_FEE_BPS));
         }
         if (c.outcome == Outcome.EXPIRED) {
-            return _netAfterFee(own, EXPIRED_FEE_BPS);
+            return (_netAfterFee(own, EXPIRED_FEE_BPS), _feeOf(own, EXPIRED_FEE_BPS));
         }
 
         BreachClaim storage claim = _claims[c.id];
@@ -833,11 +846,11 @@ contract LoveChain is ReentrancyGuard, Ownable {
                 // Own deposit + awarded share of accused deposit + bond back,
                 // all net of the 1% breach fee.
                 uint256 gross = own + award + claim.bondAmount;
-                return _netAfterFee(gross, BREACH_FEE_BPS);
+                return (_netAfterFee(gross, BREACH_FEE_BPS), _feeOf(gross, BREACH_FEE_BPS));
             } else {
                 // Accused keeps the un-awarded remainder of their own deposit.
                 uint256 remainder = other - award;
-                return _netAfterFee(remainder, BREACH_FEE_BPS);
+                return (_netAfterFee(remainder, BREACH_FEE_BPS), _feeOf(remainder, BREACH_FEE_BPS));
             }
         }
 
@@ -845,13 +858,13 @@ contract LoveChain is ReentrancyGuard, Ownable {
             // False claim: deposits returned to owners (neutral fee); the bond
             // is compensation to the falsely-accused (no fee on compensation).
             if (who == claim.accused) {
-                return _netAfterFee(own, PEACEFUL_FEE_BPS) + claim.bondAmount;
+                return (_netAfterFee(own, PEACEFUL_FEE_BPS) + claim.bondAmount, _feeOf(own, PEACEFUL_FEE_BPS));
             } else {
-                return _netAfterFee(own, PEACEFUL_FEE_BPS);
+                return (_netAfterFee(own, PEACEFUL_FEE_BPS), _feeOf(own, PEACEFUL_FEE_BPS));
             }
         }
 
-        return 0; // Outcome.NONE — nothing claimable.
+        return (0, 0); // Outcome.NONE — nothing claimable.
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -898,10 +911,11 @@ contract LoveChain is ReentrancyGuard, Ownable {
      */
     function claimableAmount(uint256 contractId, address who) external view returns (uint256) {
         LoveContract storage c = _get(contractId);
-        if (c.status != ContractStatus.RESOLVED && c.status != ContractStatus.EXPIRED) return 0;
+        if (!_isClaimable(c.status)) return 0;
         if (who != c.partnerA && who != c.partnerB) return 0;
         if (who == c.partnerA && c.partnerAClaimed) return 0;
         if (who == c.partnerB && c.partnerBClaimed) return 0;
-        return _entitlement(c, who);
+        (uint256 net, ) = _entitlement(c, who);
+        return net;
     }
 }
