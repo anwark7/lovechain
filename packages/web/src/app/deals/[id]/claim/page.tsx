@@ -1,6 +1,5 @@
 "use client";
 
-import { use } from "react";
 import Link from "next/link";
 import { DealPageShell } from "@/components/features/DealPageShell";
 import { DealOverview } from "@/components/features/DealOverview";
@@ -14,8 +13,8 @@ const CLAIMABLE = [
   ContractStatus.EXPIRED,
 ];
 
-export default function ClaimPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function ClaimPage({ params }: { params: { id: string } }) {
+  const { id } = params;
 
   return (
     <DealPageShell idParam={id}>

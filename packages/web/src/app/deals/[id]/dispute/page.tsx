@@ -1,6 +1,5 @@
 "use client";
 
-import { use } from "react";
 import Link from "next/link";
 import { DealPageShell } from "@/components/features/DealPageShell";
 import { DealOverview } from "@/components/features/DealOverview";
@@ -8,8 +7,8 @@ import { DisputePanel } from "@/components/features/DisputePanel";
 import { Alert } from "@/components/ui";
 import { ContractStatus } from "@/constants/contract";
 
-export default function DisputePage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function DisputePage({ params }: { params: { id: string } }) {
+  const { id } = params;
 
   return (
     <DealPageShell idParam={id}>

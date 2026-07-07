@@ -1,12 +1,11 @@
 "use client";
 
-import { use } from "react";
 import { DealPageShell } from "@/components/features/DealPageShell";
 import { DealOverview } from "@/components/features/DealOverview";
 import { DealActions } from "@/components/features/DealActions";
 
-export default function DealDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function DealDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params;
 
   return (
     <DealPageShell idParam={id}>
