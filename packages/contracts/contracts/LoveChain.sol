@@ -290,4 +290,124 @@ contract LoveChain is ReentrancyGuard, Ownable {
         weddingWindow = _weddingWindow;
         emit WindowsUpdated(_coolingPeriod, _challengePeriod, _weddingWindow);
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // Create / Accept / Cancel / Check-in
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Create a love contract and deposit partner A's commitment fund.
+     * @dev    Status starts at PENDING_PARTNER until B accepts and matches the
+     *         deposit. Requires exactly {WITNESS_COUNT} distinct witnesses, none
+     *         of whom is a partner. Deposit must be non-zero (msg.value).
+     * @param partner   Partner B's wallet address.
+     * @param duration  Relationship term in seconds (counts from activation).
+     * @param witnesses Exactly five distinct witness addresses.
+     * @param rules     Free-text relationship rules (declarative, PRD §33.2).
+     * @return contractId The id of the newly created contract.
+     */
+    function createLoveContract(
+        address partner,
+        uint256 duration,
+        address[] calldata witnesses,
+        string[] calldata rules
+    ) external payable returns (uint256 contractId) {
+        if (partner == address(0) || partner == msg.sender) revert InvalidPartner();
+        if (msg.value == 0) revert InvalidDeposit();
+        if (duration == 0) revert InvalidDuration();
+        if (witnesses.length != WITNESS_COUNT) revert InvalidWitnesses();
+
+        contractId = nextContractId++;
+
+        // Validate + register witnesses (distinct, not a partner).
+        for (uint256 i = 0; i < witnesses.length; i++) {
+            address w = witnesses[i];
+            if (w == address(0)) revert InvalidWitnesses();
+            if (w == msg.sender || w == partner) revert WitnessIsPartner();
+            if (_isWitness[contractId][w]) revert DuplicateWitness();
+            _isWitness[contractId][w] = true;
+            _witnesses[contractId].push(w);
+        }
+
+        for (uint256 i = 0; i < rules.length; i++) {
+            _rules[contractId].push(rules[i]);
+        }
+
+        LoveContract storage c = _contracts[contractId];
+        c.id = contractId;
+        c.partnerA = msg.sender;
+        c.partnerB = partner;
+        c.depositA = msg.value;
+        c.createdAt = block.timestamp;
+        c.duration = duration;
+        c.status = ContractStatus.PENDING_PARTNER;
+        c.outcome = Outcome.NONE;
+
+        emit ContractCreated(contractId, msg.sender, partner, msg.value, duration);
+    }
+
+    /**
+     * @notice Partner B accepts and deposits a matching amount, activating the
+     *         contract. Deposits are symmetric in the MVP (PRD §33.4).
+     */
+    function acceptContract(uint256 contractId) external payable {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.PENDING_PARTNER) revert WrongStatus();
+        if (msg.sender != c.partnerB) revert NotPartner();
+        if (msg.value != c.depositA) revert DepositMismatch();
+
+        c.depositB = msg.value;
+        c.status = ContractStatus.ACTIVE;
+        c.activatedAt = block.timestamp;
+        c.lastCheckInA = block.timestamp;
+        c.lastCheckInB = block.timestamp;
+
+        emit ContractAccepted(contractId, msg.sender, msg.value);
+    }
+
+    /**
+     * @notice Partner A cancels a still-pending contract and is fully refunded
+     *         (no fee — the contract was never active). PRD §32.
+     */
+    function cancelContract(uint256 contractId) external {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.PENDING_PARTNER) revert WrongStatus();
+        if (msg.sender != c.partnerA) revert NotPartner();
+
+        uint256 refund = c.depositA;
+        c.depositA = 0;
+        c.status = ContractStatus.CANCELLED;
+        c.outcome = Outcome.NONE;
+
+        _credit(c.partnerA, refund);
+        emit ContractCancelled(contractId, c.partnerA, refund);
+    }
+
+    /**
+     * @notice Record a periodic check-in for the calling partner. Only the
+     *         weekly check-in rule is truly enforceable on-chain (PRD §33.2);
+     *         the timestamp is surfaced in the UI as "days since check-in".
+     */
+    function checkIn(uint256 contractId) external {
+        LoveContract storage c = _get(contractId);
+        if (c.status != ContractStatus.ACTIVE) revert WrongStatus();
+        _onlyPartner(c);
+
+        if (msg.sender == c.partnerA) {
+            c.lastCheckInA = block.timestamp;
+        } else {
+            c.lastCheckInB = block.timestamp;
+        }
+        emit CheckedIn(contractId, msg.sender, block.timestamp);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Internal accounting (pull-payment ledger)
+    // ─────────────────────────────────────────────────────────────
+
+    /// @dev Credit a partner's pull-payment balance. Never pushes ETH.
+    function _credit(address to, uint256 amount) internal {
+        if (amount == 0) return;
+        pendingWithdrawals[to] += amount;
+    }
 }
