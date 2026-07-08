@@ -19,6 +19,14 @@ The guiding principle: **funds are never permanently stuck.** Every threshold ha
 a time-based fallback, and a lone partner can always recover their deposit once
 the term ends.
 
+## 🚀 Live deployment
+
+| | |
+|---|---|
+| **Network** | OP Sepolia (Optimism testnet, chain id `11155420`) |
+| **Contract** | [`0x048E3bfC22A44540c3DAE3Eb14082b185eE4a949`](https://sepolia-optimism.etherscan.io/address/0x048E3bfC22A44540c3DAE3Eb14082b185eE4a949) |
+| **Demo windows** | cooling / challenge / wedding = 180s each |
+
 ## 📚 Documentation
 
 | Document | What it's for |
