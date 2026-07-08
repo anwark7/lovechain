@@ -21,6 +21,7 @@ function envInt(name: string, fallback: number): number {
 function chainKeyFor(networkName: string): keyof DeployedAddresses | undefined {
   if (networkName === "sepolia") return "sepolia";
   if (networkName === "baseSepolia") return "baseSepolia";
+  if (networkName === "opSepolia") return "opSepolia";
   if (networkName === "localhost" || networkName === "hardhat") return "localhost";
   return undefined;
 }

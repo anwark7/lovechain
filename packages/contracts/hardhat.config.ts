@@ -9,9 +9,11 @@ dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 const {
   SEPOLIA_RPC_URL,
   BASE_SEPOLIA_RPC_URL,
+  OP_SEPOLIA_RPC_URL,
   DEPLOYER_PRIVATE_KEY,
   ETHERSCAN_API_KEY,
   BASESCAN_API_KEY,
+  OPTIMISM_ETHERSCAN_API_KEY,
 } = process.env;
 
 // Only pass an accounts array when a key is present, so `hardhat compile`
@@ -43,12 +45,29 @@ const config: HardhatUserConfig = {
       accounts,
       chainId: 84532,
     },
+    opSepolia: {
+      url: OP_SEPOLIA_RPC_URL || "https://sepolia.optimism.io",
+      accounts,
+      chainId: 11155420,
+    },
   },
   etherscan: {
     apiKey: {
       sepolia: ETHERSCAN_API_KEY || "",
       baseSepolia: BASESCAN_API_KEY || "",
+      // Hardhat's built-in id for OP Sepolia verification.
+      optimisticSepolia: OPTIMISM_ETHERSCAN_API_KEY || "",
     },
+    customChains: [
+      {
+        network: "optimisticSepolia",
+        chainId: 11155420,
+        urls: {
+          apiURL: "https://api-sepolia-optimistic.etherscan.io/api",
+          browserURL: "https://sepolia-optimism.etherscan.io",
+        },
+      },
+    ],
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS === "true",
