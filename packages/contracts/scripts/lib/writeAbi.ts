@@ -17,6 +17,7 @@ const WEB_CONTRACTS_DIR = path.resolve(__dirname, "../../../web/src/lib/contract
 export interface DeployedAddresses {
   sepolia?: string;
   baseSepolia?: string;
+  opSepolia?: string;
   localhost?: string;
 }
 

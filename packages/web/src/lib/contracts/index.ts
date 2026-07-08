@@ -19,7 +19,9 @@ export function getLoveChainAddress(chainId?: number): Address | undefined {
       ? process.env.NEXT_PUBLIC_LOVECHAIN_ADDRESS_SEPOLIA
       : chainId === 84532
         ? process.env.NEXT_PUBLIC_LOVECHAIN_ADDRESS_BASE_SEPOLIA
-        : undefined;
+        : chainId === 11155420
+          ? process.env.NEXT_PUBLIC_LOVECHAIN_ADDRESS_OP_SEPOLIA
+          : undefined;
   if (envAddr && envAddr.startsWith("0x")) return envAddr as Address;
 
   const key = CHAIN_KEY_BY_ID[chainId] as ChainKey | undefined;
