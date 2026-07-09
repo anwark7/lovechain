@@ -1,5 +1,5 @@
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
-import { sepolia, baseSepolia, optimismSepolia } from "wagmi/chains";
+import { optimismSepolia } from "wagmi/chains";
 import { http } from "wagmi";
 
 // WalletConnect project id — optional for a local demo with injected wallets
@@ -17,15 +17,14 @@ if (projectId === "lovechain-demo") {
   );
 }
 
-// OP Sepolia listed first so it is the default connection target.
+// Locked to OP Sepolia only — the LoveChain contract is only deployed there,
+// so offering other chains would be dead ends (no address to resolve).
 export const wagmiConfig = getDefaultConfig({
   appName: "LoveChain",
   projectId,
-  chains: [optimismSepolia, sepolia, baseSepolia],
+  chains: [optimismSepolia],
   transports: {
     [optimismSepolia.id]: http(process.env.NEXT_PUBLIC_OP_SEPOLIA_RPC_URL || undefined),
-    [sepolia.id]: http(),
-    [baseSepolia.id]: http(),
   },
   ssr: true,
 });

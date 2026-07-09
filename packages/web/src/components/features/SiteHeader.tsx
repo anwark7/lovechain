@@ -27,7 +27,11 @@ export function SiteHeader() {
           >
             My Deals
           </Link>
-          <ConnectButton showBalance={false} accountStatus="address" />
+          <ConnectButton
+            showBalance={false}
+            accountStatus="address"
+            chainStatus="none"
+          />
         </nav>
       </div>
     </header>
