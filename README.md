@@ -24,8 +24,9 @@ the term ends.
 | | |
 |---|---|
 | **Network** | OP Sepolia (Optimism testnet, chain id `11155420`) |
-| **Contract** | [`0x048E3bfC22A44540c3DAE3Eb14082b185eE4a949`](https://sepolia-optimism.etherscan.io/address/0x048E3bfC22A44540c3DAE3Eb14082b185eE4a949) |
+| **Contract** | [`0xC98a60eAB476cEb42de0D2BB2070665f217d6d80`](https://sepolia-optimism.etherscan.io/address/0xC98a60eAB476cEb42de0D2BB2070665f217d6d80) |
 | **Demo windows** | cooling / challenge / wedding = 180s each |
+| **Demo thresholds** | 1–5 witnesses; wedding & breach both validate on **1** approval (for demo only) |
 
 ## 📚 Documentation
 
