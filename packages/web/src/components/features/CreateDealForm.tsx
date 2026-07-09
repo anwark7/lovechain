@@ -48,9 +48,12 @@ export function CreateDealForm() {
       return "Deposit is not a valid ETH amount.";
     }
     if (depWei <= 0n) return "Deposit must be greater than zero.";
+    // DEMO: at least 1 witness required; the rest are optional (contract accepts 1–5).
+    const filled = witnesses.map((w) => w.trim()).filter((w) => w.length > 0);
+    if (filled.length < 1) return "At least 1 witness is required.";
     const seen = new Set<string>();
-    for (const w of witnesses) {
-      if (!isAddress(w)) return "All 5 witnesses must be valid addresses.";
+    for (const w of filled) {
+      if (!isAddress(w)) return "Each provided witness must be a valid address.";
       if (sameAddress(w, account) || sameAddress(w, partner))
         return "A witness cannot be a partner.";
       const key = w.toLowerCase();
@@ -71,9 +74,14 @@ export function CreateDealForm() {
       .map((r) => r.trim())
       .filter(Boolean);
 
+    // DEMO: send only the filled witness fields (1–5), not the empty placeholders.
+    const filledWitnesses = witnesses
+      .map((w) => w.trim())
+      .filter((w) => w.length > 0) as `0x${string}`[];
+
     send(
       "createLoveContract",
-      [partner as `0x${string}`, BigInt(duration), witnesses as `0x${string}`[], ruleList],
+      [partner as `0x${string}`, BigInt(duration), filledWitnesses, ruleList],
       parseEther(deposit)
     );
   }
@@ -122,10 +130,10 @@ export function CreateDealForm() {
 
           <div>
             <span className="mb-1.5 block text-sm font-medium text-rose-50/80">
-              Witnesses (exactly {WITNESS_COUNT})
+              Witnesses (1–{WITNESS_COUNT})
             </span>
             <p className="mb-2 text-xs text-rose-50/40">
-              Suggested split: 2 from each side + 1 neutral. Distinct addresses, not the partners.
+              At least 1 required; up to {WITNESS_COUNT}. Distinct addresses, not the partners.
             </p>
             <div className="space-y-2">
               {witnesses.map((w, i) => (

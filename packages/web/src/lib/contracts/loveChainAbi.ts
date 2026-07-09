@@ -783,6 +783,19 @@ export const loveChainAbi = [
   },
   {
     "inputs": [],
+    "name": "MIN_WITNESS_COUNT",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "PEACEFUL_FEE_BPS",
     "outputs": [
       {

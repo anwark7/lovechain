@@ -27,14 +27,22 @@ contract LoveChain is ReentrancyGuard, Ownable {
     /// @notice Basis-point denominator (100% = 10_000 bps).
     uint256 public constant BPS_DENOMINATOR = 10_000;
 
-    /// @notice Exactly five witnesses per contract (PRD §26).
+    /// @notice Maximum witnesses per contract. DEMO: minimum lowered to 1 (see
+    ///         MIN_WITNESS_COUNT); production intent was exactly 5 (PRD §26).
     uint256 public constant WITNESS_COUNT = 5;
 
-    /// @notice Witness approvals required to validate a Wedding Unlock (3 of 5).
-    uint256 public constant WEDDING_THRESHOLD = 3;
+    /// @notice DEMO: minimum witnesses required. Lowered from 5 to 1 so demos can
+    ///         run with a single witness. NOTE: thresholds below are also lowered
+    ///         to 1 so small-witness contracts can still validate.
+    uint256 public constant MIN_WITNESS_COUNT = 1;
 
-    /// @notice Witness approvals required to validate a Breach Claim (4 of 5).
-    uint256 public constant BREACH_THRESHOLD = 4;
+    /// @notice DEMO: witness approvals to validate a Wedding Unlock. Lowered from
+    ///         3-of-5 to 1 so a demo with few witnesses can still unlock.
+    uint256 public constant WEDDING_THRESHOLD = 1;
+
+    /// @notice DEMO: witness approvals to validate a Breach Claim. Lowered from
+    ///         4-of-5 to 1 for the same reason.
+    uint256 public constant BREACH_THRESHOLD = 1;
 
     // Platform fee tiers, in basis points (PRD §28.2).
     uint256 public constant WEDDING_FEE_BPS = 25; // 0.25%
@@ -316,7 +324,9 @@ contract LoveChain is ReentrancyGuard, Ownable {
         if (partner == address(0) || partner == msg.sender) revert InvalidPartner();
         if (msg.value == 0) revert InvalidDeposit();
         if (duration == 0) revert InvalidDuration();
-        if (witnesses.length != WITNESS_COUNT) revert InvalidWitnesses();
+        // DEMO: allow between MIN_WITNESS_COUNT (1) and WITNESS_COUNT (5) witnesses.
+        if (witnesses.length < MIN_WITNESS_COUNT || witnesses.length > WITNESS_COUNT)
+            revert InvalidWitnesses();
 
         contractId = nextContractId++;
 
